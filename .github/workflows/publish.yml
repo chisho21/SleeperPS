@@ -1,0 +1,32 @@
+name: publishtopsgallery
+
+on:
+  release:
+    types: [published]
+    
+  workflow_dispatch: # Enables the possibility to trigger the workflow manually
+
+jobs:
+  publish-to-gallery:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Publish to PowerShell Gallery
+        env:
+          PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
+        shell: pwsh
+        run: |
+          # Find the module path by locating the .psd1 file
+          $moduleManifest = Get-ChildItem -Path . -Recurse -Filter *.psd1 | Select-Object -First 1
+          if (-Not $moduleManifest) {
+              Write-Error "Module manifest (.psd1) not found."
+              exit 1
+          }
+
+          $modulePath = $moduleManifest.Directory.FullName
+          Write-Host "Publishing module from path: $modulePath"
+          
+          # Publish the module
+          Publish-Module -Path $modulePath -NuGetApiKey $env:PSGALLERY_API_KEY -Verbose
