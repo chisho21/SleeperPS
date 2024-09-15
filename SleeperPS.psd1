@@ -63,9 +63,9 @@ For more information, visit: https://creativecommons.org/licenses/by-nc-sa/4.0/
     # ProcessorArchitecture = ''
     
     # Modules that must be imported into the global environment prior to importing this module
-    RequiredModules = @(
-        @{ ModuleName = 'ImportExcel'; ModuleVersion = '7.1.1' }
-    )
+    # RequiredModules = @(
+    #     @{ ModuleName = 'ImportExcel'; ModuleVersion = '7.1.1' }
+    # )
     
     # Assemblies that must be loaded prior to importing this module
     # RequiredAssemblies = @()
