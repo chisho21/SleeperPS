@@ -20,6 +20,8 @@ function Get-SleeperWeeklyReport {
 
         [string]$ExcelFilePath,            # Excel file path (optional)
 
+        [switch]$SlackReport,              # Output formatted for Slack
+
         [switch]$IncludeAllWeeks           # Switch to include every week up to $Week
     )
 
@@ -274,6 +276,34 @@ function Get-SleeperWeeklyReport {
 
         Write-Host "Weekly report exported."
     }
+
+    # Step X: Generate Slack report if the switch is used
+    if ($SlackReport) {
+        # Define the Slack report format
+        $slackOutput = ":mega:  Week $Week Recap :football: :magic_wand:`n"
+        $slackOutput += ":memo: Word from the commish`n"
+        $slackOutput += "What a whirlwind! Can't wait to see what week $($Week+1) brings!`n"
+        $slackOutput += ":trophy: The Best`n"
+        $slackOutput += "Highest Scoring: `$($summaryStats.HighestScoringTeam)`n"
+        $slackOutput += "Best QB: `$($summaryStats.BestQB)`n"
+        $slackOutput += "Best RB: `$($summaryStats.BestRB)`n"
+        $slackOutput += "Best WR: `$($summaryStats.BestWR)`n"
+        $slackOutput += "Best TE: `$($summaryStats.BestTE)`n"
+        $slackOutput += "Best K: `$($summaryStats.BestK)`n"
+        $slackOutput += "Best DEF: `$($summaryStats.BestDEF)`n"
+        $slackOutput += ":toilet: The Rest`n"
+        $slackOutput += ":drake-no: Lowest Points: `$($summaryStats.LowestScoringTeam)`n"
+        $slackOutput += ":oof: Bad Beat (most points in loss): `$($summaryStats.'BadBeat (Most pts in L)')`n"
+        $slackOutput += ":cat_roomba: Eeker (lowest pts in win): `$($summaryStats.'SkinOfTeeth (Narrowest W)')`n"
+        $slackOutput += ":briefcase: Business Items`n"
+        $slackOutput += "Trades and waivers are your only levers in this league. Start making offers!`n"
+        $slackOutput += ":compass: Division Leaders`n"
+        # (You can add additional data here like division leaders or other info.)
+
+        Write-Host $slackOutput
+        return
+    }
+
     $allmatches | Sort-Object -Property league,week,WinnerPoints -Descending | Format-Table
     return $summaryStats
 }
