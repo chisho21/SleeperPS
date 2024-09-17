@@ -93,7 +93,7 @@ function Get-SleeperWeeklyReport {
             $weekData = @()
 
             # Fetch matchups for the specified week
-            $matchups = Get-SleeperLeagueMatchups -LeagueId $league.leagueid -Week $i
+            $matchups = Get-SleeperLeagueMatchups -LeagueId $league.leagueid -Week $i -RawJSON
 
             # Process each matchup
             foreach ($matchup in $matchups) {
@@ -124,6 +124,8 @@ function Get-SleeperWeeklyReport {
                             Starter    = $starter
                             PlayerYears = $player.YearsExp
                             PlayerAge  = $player.Age
+                            PlayerHeight = $player.Height
+                            PlayerWeight = $player.Weight
                             PlayerDepth = $player.DepthChartOrder
                             Points     = $points
                         }
@@ -172,6 +174,13 @@ function Get-SleeperWeeklyReport {
             $bestBenchPlayer = $weekData | Where-Object { $_.Starter -eq "BENCH" -and $_.Points -gt 0 } | Sort-Object Points -Descending | Select-Object -First 1
             $bestBaby = $weekData | Where-Object { $_.PlayerAge -le 24 -and $_.Starter -eq "STARTER" -and $_.PlayerPos -ne "DEF" } | Sort-Object Points -Descending | Select-Object -First 1
             $bestGrandpa = $weekData | Where-Object { $_.PlayerAge -ge 30 -and $_.Starter -eq "STARTER" -and $_.PlayerPos -ne "DEF" } | Sort-Object Points -Descending | Select-Object -First 1
+            $bestChonker = $weekData | Where-Object { $_.PlayerWeight -ge 240 -and $_.Starter -eq "STARTER" -and $_.PlayerPos -ne "DEF" } | Sort-Object Points -Descending | Select-Object -First 1
+            $bestFeather = $weekData | Where-Object { $_.PlayerWeight -le 180 -and $_.Starter -eq "STARTER" -and $_.PlayerPos -ne "DEF" } | Sort-Object Points -Descending | Select-Object -First 1
+            $bestTallboi = $weekData | Where-Object { $_.PlayerHeight -ge 78 -and $_.Starter -eq "STARTER" -and $_.PlayerPos -ne "DEF" } | Sort-Object Points -Descending | Select-Object -First 1
+            $bestShortKing = $weekData | Where-Object { $_.PlayerHeight -le 68 -and $_.Starter -eq "STARTER" -and $_.PlayerPos -ne "DEF" } | Sort-Object Points -Descending | Select-Object -First 1
+            $bestSecondStringer = $weekData | Where-Object { $_.PlayerDepth -eq 2 -and $_.Starter -eq "STARTER" -and $_.PlayerPos -ne "DEF" } | Sort-Object Points -Descending | Select-Object -First 1
+            $bestThirdStringer = $weekData | Where-Object { $_.PlayerDepth -eq 3 -and $_.Starter -eq "STARTER" -and $_.PlayerPos -ne "DEF" } | Sort-Object Points -Descending | Select-Object -First 1
+            $bestFourthStringer = $weekData | Where-Object { $_.PlayerDepth -ge 4 -and $_.Starter -eq "STARTER" -and $_.PlayerPos -ne "DEF" } | Sort-Object Points -Descending | Select-Object -First 1
 
             # Additional matchup stats (Blowout, Narrowest, Bad Beat, Overachiever)
             $allmatches += $matchstats = $matchups | Group-Object -Property matchup_id | ForEach-Object {
@@ -209,7 +218,7 @@ function Get-SleeperWeeklyReport {
 
             $biggestBlowout = $matchstats | Sort-Object -Property Difference -Descending | Select-Object -First 1
 
-            $narrowestVictory = $matchstats | Sort-Object -Property Difference | Select-Object -First 1
+            $narrowestVictory = $matchstats | Where-Object { $_.WinnerPoints -gt 0 } | Sort-Object -Property Difference | Select-Object -First 1
 
             $badbeat = $matchstats | Where-Object { $_.LoserPoints -gt 0 } | Sort-Object -Property LoserPoints -Descending | Select-Object -First 1
             
@@ -230,6 +239,13 @@ function Get-SleeperWeeklyReport {
                 BestDEF              = "$($bestDEF.TeamOwner) - $($bestDEF.PlayerTeam) ($($bestDEF.Points) pts)"
                 "BestBaby(24-)"      = "$($bestBaby.TeamOwner) - $($bestBaby.Player) ($($bestBaby.Points) pts - $($bestBaby.PlayerAge) y.o.)"
                 "BestGrandpa(30+)" = "$($bestGrandpa.TeamOwner) - $($bestGrandpa.Player) ($($bestGrandpa.Points) pts - $($bestGrandpa.PlayerAge) y.o.)"
+                "BestChonker(240+)" = "$($bestChonker.TeamOwner) - $($bestChonker.Player) ($($bestChonker.Points) pts - $($bestChonker.PlayerWeight) lbs)"
+                "BestFeather(180-)" ="$($bestFeather.TeamOwner) - $($bestFeather.Player) ($($bestFeather.Points) pts - $($bestFeather.PlayerWeight) lbs)"
+                "BestTallBoi(6'6+)" = "$($bestTallboi.TeamOwner) - $($bestTallboi.Player) ($($bestTallboi.Points) pts - $($bestTallboi.PlayerHeight) in.)"
+                "BestShortKing(5'8-)" = "$($bestShortking.TeamOwner) - $($bestShortking.Player) ($($bestShortking.Points) pts - $($bestShortking.PlayerHeight) in.)"
+                "BestSecondStringer" = "$($bestSecondStringer.TeamOwner) - $($bestSecondStringer.Player) ($($bestSecondStringer.Points) pts - $($bestSecondStringer.PlayerPos)$($bestSecondStringer.PlayerDepth) )"
+                "BestThirdStringer" = "$($bestThirdStringer.TeamOwner) - $($bestThirdStringer.Player) ($($bestThirdStringer.Points) pts - $($bestThirdStringer.PlayerPos)$($bestThirdStringer.PlayerDepth))"
+                "BestFourth+Stringer" = "$($bestFourthStringer.TeamOwner) - $($bestFourthStringer.Player) ($($bestFourthStringer.Points) pts - $($bestFourthStringer.PlayerPos)$($bestFourthStringer.PlayerDepth))"
                 BestBenchPlayer     = "$($bestBenchPlayer.TeamOwner) - $($bestBenchPlayer.Player) ($($bestBenchPlayer.Points) pts)"
                 BestBenchTeam       = "$($highestBenchTeam.TeamOwner) - $($highestBenchTeam.TotalPoints) pts"
                 BiggestBlowout             = "$($biggestBlowout.Winner) ($($biggestBlowout.WinnerPoints) pts) vs $($biggestBlowout.Loser) ($($biggestBlowout.LoserPoints) pts) - ($($biggestBlowout.Difference)) pts)"
@@ -279,29 +295,48 @@ function Get-SleeperWeeklyReport {
 
     # Step X: Generate Slack report if the switch is used
     if ($SlackReport) {
-        # Define the Slack report format
-        $slackOutput = ":mega:  Week $Week Recap :football: :magic_wand:`n"
-        $slackOutput += ":memo: Word from the commish`n"
-        $slackOutput += "What a whirlwind! Can't wait to see what week $($Week+1) brings!`n"
-        $slackOutput += ":trophy: The Best`n"
-        $slackOutput += "Highest Scoring: `$($summaryStats.HighestScoringTeam)`n"
-        $slackOutput += "Best QB: `$($summaryStats.BestQB)`n"
-        $slackOutput += "Best RB: `$($summaryStats.BestRB)`n"
-        $slackOutput += "Best WR: `$($summaryStats.BestWR)`n"
-        $slackOutput += "Best TE: `$($summaryStats.BestTE)`n"
-        $slackOutput += "Best K: `$($summaryStats.BestK)`n"
-        $slackOutput += "Best DEF: `$($summaryStats.BestDEF)`n"
-        $slackOutput += ":toilet: The Rest`n"
-        $slackOutput += ":drake-no: Lowest Points: `$($summaryStats.LowestScoringTeam)`n"
-        $slackOutput += ":oof: Bad Beat (most points in loss): `$($summaryStats.'BadBeat (Most pts in L)')`n"
-        $slackOutput += ":cat_roomba: Eeker (lowest pts in win): `$($summaryStats.'SkinOfTeeth (Narrowest W)')`n"
-        $slackOutput += ":briefcase: Business Items`n"
-        $slackOutput += "Trades and waivers are your only levers in this league. Start making offers!`n"
-        $slackOutput += ":compass: Division Leaders`n"
-        # (You can add additional data here like division leaders or other info.)
 
-        Write-Host $slackOutput
-        return
+        $slackOutput = ""
+
+        # Loop through each league and week combination in summary stats
+        foreach ($stat in $summaryStats) {
+            $leagueName = $stat.League
+            $weekNumber = $stat.Week
+
+            $slackOutput += ":mega:  **Week $weekNumber Recap - $leagueName** :football: :magic_wand:`n"
+
+            # Add summary stats
+            $slackOutput += ":trophy: **The Best**`n"
+            $slackOutput += "Highest Scoring: `$(Get-UserDisplayName -UserId $stat.HighestScoringTeamId -DefaultUsername $stat.HighestScoringTeam) - $($stat.HighestScoringPoints) pts`n"
+            $slackOutput += "Best QB: `$(Get-UserDisplayName -UserId $stat.BestQBUserId -DefaultUsername $stat.BestQB) - $($stat.BestQBPoints) pts`n"
+            $slackOutput += "Best RB: `$(Get-UserDisplayName -UserId $stat.BestRBUserId -DefaultUsername $stat.BestRB) - $($stat.BestRBPoints) pts`n"
+            $slackOutput += "Best WR: `$(Get-UserDisplayName -UserId $stat.BestWRUserId -DefaultUsername $stat.BestWR) - $($stat.BestWRPoints) pts`n"
+            $slackOutput += "Best TE: `$(Get-UserDisplayName -UserId $stat.BestTEUserId -DefaultUsername $stat.BestTE) - $($stat.BestTEPoints) pts`n"
+            $slackOutput += "Best K: `$(Get-UserDisplayName -UserId $stat.BestKUserId -DefaultUsername $stat.BestK) - $($stat.BestKPoints) pts`n"
+            $slackOutput += "Best DEF: `$(Get-UserDisplayName -UserId $stat.BestDEFUserId -DefaultUsername $stat.BestDEF) - $($stat.BestDEFPoints) pts`n"
+
+            $slackOutput += ":toilet: **The Rest**`n"
+            $slackOutput += ":drake-no: Lowest Points: `$(Get-UserDisplayName -UserId $stat.LowestScoringTeamId -DefaultUsername $stat.LowestScoringTeam) - $($stat.LowestScoringPoints) pts`n"
+            $slackOutput += ":oof: Bad Beat: `$(Get-UserDisplayName -UserId $stat.BadBeatUserId -DefaultUsername $stat.BadBeatTeam) - $($stat.BadBeatPoints) pts`n"
+            $slackOutput += ":cat_roomba: Eeker (lowest pts in win): `$(Get-UserDisplayName -UserId $stat.OverachieverUserId -DefaultUsername $stat.OverachieverTeam) - $($stat.OverachieverPoints) pts`n"
+
+            # Add head-to-head matchups for this league and week
+            $slackOutput += "`n**Head to Head Matchups for Week $weekNumber - $leagueName**`n"
+            $currentMatches = $allmatches | Where-Object { $_.League -eq $leagueName -and $_.Week -eq $weekNumber }
+
+            foreach ($match in $currentMatches) {
+                $winnerName = Get-UserDisplayName -UserId $match.WinnerId -DefaultUsername $match.Winner
+                $loserName = Get-UserDisplayName -UserId $match.LoserId -DefaultUsername $match.Loser
+                $slackOutput += "$winnerName ($($match.WinnerPoints) pts) vs $loserName ($($match.LoserPoints) pts)`n"
+            }
+
+            # Separator for each league and week
+            $slackOutput += "`n"
+        }
+
+        # Output the Slack Report for copy-paste
+        return $slackOutput
+    
     }
 
     $allmatches | Sort-Object -Property league,week,WinnerPoints -Descending | Format-Table

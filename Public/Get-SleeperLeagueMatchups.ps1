@@ -1,76 +1,139 @@
-<#
-.SYNOPSIS
-Retrieves matchups for a specific week in a league.
-
-.DESCRIPTION
-The Get-SleeperMatchups cmdlet retrieves weekly matchups for a specified week in a given league.
-If no week is provided, it fetches the current week from the Sleeper NFL state API.
-
-.PARAMETER LeagueId
-Specifies the unique identifier of the Sleeper league. This can be passed directly or through the pipeline.
-
-.PARAMETER Week
-Specifies the week number to retrieve matchups for. If not provided, it defaults to the current week using the Sleeper NFL state.
-
-.EXAMPLE
-PS C:\> Get-SleeperMatchups -LeagueId "123456789" -Week 5
-
-Retrieves matchups for week 5 in the league with ID "123456789".
-
-.EXAMPLE
-PS C:\> Get-SleeperMatchups -LeagueId "123456789"
-
-Fetches matchups for the current week in the league with ID "123456789".
-
-.OUTPUTS
-PSCustomObject
-Returns detailed matchup information for the specified week in the league.
-
-.NOTES
-Version: 1.0.0
-Author: Your Name
-#>
 function Get-SleeperLeagueMatchups {
     [CmdletBinding()]
     param (
-        [Parameter(Mandatory = $true, ValueFromPipelineByPropertyName = $true, ValueFromPipeline = $true)]
-        [string]$LeagueId,
+        [Parameter(Mandatory = $true)]
+        [string]$LeagueId,   # Accepts a Sleeper league ID
 
         [Parameter(Mandatory = $false)]
-        [int]$Week
+        [int]$Week = (Get-SleeperNFLState).week,  # Get the current week by default
+
+        [switch]$RawJSON,  # Output the raw JSON data for troubleshooting
+
+        [switch]$PrettyOutput  # Output the summarized PrettyOutput
     )
 
-    process {
-        # If Week is not provided, fetch the current week from Sleeper NFL state
-        if (-not $PSBoundParameters.ContainsKey('Week')) {
-            Write-Host "Week not provided, fetching current week from Sleeper NFL state..."
+    # Step 1: Fetch league rosters
+    Write-Verbose "Fetching rosters for league $LeagueId"
+    $rosters = Get-SleeperLeagueRosters -LeagueId $LeagueId
 
-            # Call Sleeper NFL state API to get the current week
-            $nflState = Get-SleeperNFLState
+    # Fetch aliases if available
+    $aliases = Get-SleeperUserAlias -LeagueID $LeagueId
 
-            if ($nflState.week) {
-                $Week = $nflState.week
-                Write-Host "Current week fetched: $Week"
-            } else {
-                Write-Warning "Could not fetch the current week from Sleeper NFL state."
-                return
-            }
-        }
-
-        # Fetch matchups for the specified or default week
-        $url = "https://api.sleeper.app/v1/league/$LeagueId/matchups/$Week"
-        Write-Host "Fetching matchups for LeagueId: $LeagueId, Week: $Week"
-
+    # Create a lookup for roster IDs to usernames or aliases
+    $rosterToOwner = @{}
+    foreach ($roster in $rosters) {
         try {
-            $response = Invoke-RestMethod -Uri $url -Method Get
-            return $response
+            $username = (Get-SleeperUser -UserId $roster.OwnerId -ErrorAction Stop).Username
+        } catch {
+            $username = "Team $($roster.rosterid)"
         }
-        catch {
-            if ($_ -match '404') {
-                Write-Warning "League with ID $LeagueId was not found or no matchups available for Week $Week (404)."
-            } else {
-                Write-Warning "An error occurred while fetching matchups for LeagueId: $LeagueId and Week: $Week. Error: $_"
-            }
+
+        # Check if an alias exists for the user in this league
+        $alias = $aliases | Where-Object { $_.Username -eq $username } | Select-Object -ExpandProperty Alias -ErrorAction SilentlyContinue
+        if ($alias) {
+            $rosterToOwner[$roster.rosterid] = $alias
+        } else {
+            $rosterToOwner[$roster.rosterid] = $username
         }
     }
+
+    # Step 2: Fetch matchups for the specified week
+    Write-Verbose "Fetching matchups for Week $Week in league $LeagueId"
+    $matchupsEndpoint = "https://api.sleeper.app/v1/league/$LeagueId/matchups/$Week"
+    $matchups = Invoke-RestMethod -Uri $matchupsEndpoint -Method Get
+
+    # Step 3: Fetch player data
+    Write-Verbose "Fetching player data from cache/API"
+    $players = Get-SleeperPlayer
+
+    # Step 4: Return raw JSON if -RawJSON switch is used
+    if ($RawJSON) {
+        Write-Verbose "Outputting raw JSON for troubleshooting"
+        return $matchups
+    }
+
+    # Step 5: Process matchups with resolved player information
+    $processedMatchups = @()
+
+    foreach ($matchup in $matchups) {
+        $teamOwner = $rosterToOwner[($matchup.roster_id).ToString()]
+        $opponent = $matchups | Where-Object { $_.matchup_id -eq $matchup.matchup_id -and $_.roster_id -ne $matchup.roster_id }
+        $opponentName = $rosterToOwner[($opponent.roster_id).ToString()]
+
+        # Resolve players in the matchup
+        $resolvedPlayers = @()
+        foreach ($playerId in $matchup.players) {
+            $player = $players | Where-Object { $_.PlayerId -eq $playerId }
+
+            if ($player) {
+                # Add extended player information
+                $resolvedPlayer = [PSCustomObject]@{
+                    PlayerID      = $playerId
+                    FullName      = $player.FullName
+                    Position      = $player.Position
+                    Team          = $player.Team
+                    YearsExp      = $player.YearsExp
+                    Age           = $player.Age
+                    DepthChartOrder = $player.DepthChartOrder
+                    Points        = $matchup.players_points.$playerId
+                }
+
+                # Add to resolved players list
+                $resolvedPlayers += $resolvedPlayer
+            }
+        }
+
+        # Create the matchup data object with resolved players and raw fields
+        $matchupData = [PSCustomObject]@{
+            League          = $LeagueId
+            Week            = $Week
+            MatchupID       = $matchup.matchup_id
+            TeamOwner       = $teamOwner
+            Opponent        = $opponentName
+            RosterID        = $matchup.roster_id
+            Points          = $matchup.points
+            Starters        = $matchup.starters
+            StartersPoints  = $matchup.starters_points
+            AllPlayersPoints = $resolvedPlayers
+        }
+
+        # Add the processed matchup data to the collection
+        $processedMatchups += $matchupData
+    }
+
+    # Step 6: Handle PrettyOutput if the switch is used
+    if ($PrettyOutput) {
+        $prettyOut = @()
+
+        # Group matchups by their unique matchup ID and process each pair only once
+        $uniqueMatchups = $processedMatchups | Group-Object -Property MatchupID
+
+        foreach ($group in $uniqueMatchups) {
+            $team1 = $group.Group[0]
+            $team2 = $group.Group[1]
+
+            $winner = if ($team1.Points -gt $team2.Points) { $team1 } else { $team2 }
+            $loser = if ($team1.Points -le $team2.Points) { $team1 } else { $team2 }
+
+            # Construct the pretty output for the unique matchup
+            $prettyMatchup = [PSCustomObject]@{
+                League       = $team1.League
+                Week         = $team1.Week
+                MatchupID    = $team1.MatchupID
+                Team1        = $team1.TeamOwner
+                Team1Points  = $team1.Points
+                Team2        = $team2.TeamOwner
+                Team2Points  = $team2.Points
+                Winner       = $winner.TeamOwner
+                Summary      = "$($winner.TeamOwner) ($($winner.Points)) def. $($loser.TeamOwner) ($($loser.Points))"
+            }
+
+            $prettyOut += $prettyMatchup
+        }
+
+        return $prettyOut
+    }
+
+    # Step 7: Return the processed matchups
+    return $processedMatchups
 }
